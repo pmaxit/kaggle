@@ -4,8 +4,7 @@ from sklearn import metrics
 
 from .dispatcher import MODELS
 from .utils import *
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, log_loss,classification_report
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
@@ -47,9 +46,11 @@ def train(df: pd.DataFrame, clf, kfold:int = 0)-> None:
 
     #preds = final_pipeline.predict_proba(valid_df)
     y_pred = clf.predict(valid_df)
+    y_proba = clf.predict_proba(valid_df)
 
     # dump the whole pipeline
     print(classification_report(yValid, y_pred))
+    print("Log loss ", log_loss(yValid, y_proba))
     save_to_file(clf, f'../models/{MODEL}_{FOLD}.pkl')
 
 if __name__ == '__main__':

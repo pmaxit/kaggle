@@ -15,3 +15,6 @@ class RandomForest(BaseEstimator, TransformerMixin):
 
     def predict(self, X):
         return self.final_pipeline.predict(X)
+    
+    def predict_proba(self, X):
+        return self.final_pipeline.predict_proba(X)
