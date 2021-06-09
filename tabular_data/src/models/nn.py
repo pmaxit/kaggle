@@ -15,7 +15,6 @@ import pandas as pd
 
 import warnings
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-device = 'cpu'
 torch.manual_seed(0)
 
 def residual_block(in_features, out_features, p_drop, non_linear = nn.ReLU(), *args, **kwargs):
@@ -110,4 +109,9 @@ class TPSResidualEstimator(BaseEstimator, TransformerMixin):
         return self.net.predict(X_test)
     
     def predict_proba(self, X):
-        return self.net.predict_proba(X)
+        if isinstance(X, pd.DataFrame):
+            X_test = X.values.astype('int64')
+        else:
+            raise NotImplementedError
+            
+        return self.net.predict_proba(X_test)
