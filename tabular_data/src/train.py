@@ -42,7 +42,7 @@ def train(df: pd.DataFrame, clf, kfold:int = 0)-> None:
     valid_df = valid_df[train_df.columns]
     
     # fit the model. model will take care of pipeline
-    clf.fit(train_df, yTrain)
+    clf.fit(train_df, yTrain,full=True)
 
     #preds = final_pipeline.predict_proba(valid_df)
     y_pred = clf.predict(valid_df)
