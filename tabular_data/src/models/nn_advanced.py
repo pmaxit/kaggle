@@ -16,74 +16,92 @@ import pandas as pd
 import warnings
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device = 'cpu'
-torch.manual_seed(0)
 
-def residual_block(in_features, out_features, p_drop, non_linear = nn.ReLU(), *args, **kwargs):
-    return nn.Sequential(
-        nn.Dropout(p = p_drop),
-        weight_norm(nn.Linear(in_features, out_features)),
-        non_linear
-    )
+torch.manual_seed(0)
+def residual_block(in_features, out_features, batch_norm, p_drop, non_linear = nn.ReLU(), *args, **kwargs):       
+        net = nn.Sequential(
+            nn.Dropout(p = p_drop),
+            weight_norm(nn.Linear(in_features, out_features)),
+            non_linear) 
+        
+        if batch_norm:
+            net = nn.Sequential(nn.BatchNorm1d(in_features),
+                                nn.Dropout(p = p_drop),
+                                nn.Linear(in_features, out_features),
+                                non_linear)
+        return net
+
+
 
 class TPSResidual(nn.Module):
-    def __init__(self, num_class = 9, emb_szs = None, dropout = 0.3, linear_nodes=32, linear_out=16, emb_output=4, num_block=3):
-        super().__init__()
+    def __init__(self, 
+                 num_features = 75, 
+                 num_class = 9, 
+                 feature_dictionary_size = 360, 
+                 batch_norm = False,
+                 dropout = 0.3, 
+                 linear_nodes = 32, 
+                 linear_out = 16, 
+                 emb_output = 4, 
+                 num_block = 3, **kwargs):
+        super(TPSResidual, self).__init__()
         self.num_block = num_block
-        
         self.final_module_list = nn.ModuleList()
-
-        #self.embedding = nn.Embedding(feature_dictionary_size, emb_output)
-        self.embeds = nn.ModuleList([nn.Embedding(ni, nf) for ni,nf in emb_szs]) #type: torch.nn.modules.container.ModuleList
-        self.n_emb = sum(e.embedding_dim for e in self.embeds) # n_emb = 17 , type: int
-
+    
+        
+        self.embedding = nn.Embedding(feature_dictionary_size, emb_output)
         self.flatten = nn.Flatten()
 
-        self.linear = weight_norm(nn.Linear(self.n_emb, linear_nodes))
-        #self.linear = weight_norm(nn.Linear(emb_output * num_features, linear_nodes ))
-
+        self.linear = weight_norm(nn.Linear(emb_output * num_features, linear_nodes))
+        torch.nn.init.xavier_uniform(self.linear.weight)
+        
         for res_num in range(self.num_block):
-            self.non_linear = nn.ELU() if res_num %2 else nn.ReLU()
-            self.lin_out = linear_out if res_num == (self.num_block - 1) else linear_nodes
-            self.final_module_list.append(residual_block( self.n_emb + (res_num + 1) * linear_nodes, 
-                                self.lin_out, dropout, self.non_linear))
+            self.non_linear = nn.ELU() if res_num % 2 else nn.ReLU()
+            self.lin_out = linear_out if res_num == (num_block-1) else linear_nodes
+            self.final_module_list.append(residual_block(emb_output * num_features + (res_num + 1) * linear_nodes, self.lin_out, batch_norm, dropout, self.non_linear))
+        
+        #self.bn = nn.BatchNorm1d(linear_out)
         self.out = nn.Linear(linear_out, num_class)
-
-        # non-linearity - activation function
+        
+        # nonlinearity - activation function
         self.selu = nn.SELU()
+        
         self.dropout = nn.Dropout(p = dropout)
 
     def forward(self, x):
-        # Embedding
-        if self.n_emb != 0:
-            x = [e(x[:,i]) for i,e in enumerate(self.embeds)] #take the embedding list and grab an embedding and pass in our single row of data.        
-            x = torch.cat(x, 1) # concatenate it on dim 1 ## remeber that the len is the batch size
-            x = self.dropout(x) # pass it through a dropout layer
-        e = self.flatten(x)
+        x = torch.tensor(x).to(torch.int64)
+        
+        # Embedding 
+        e = self.embedding(x)
+        e = self.flatten(e)
         
         h1 = self.dropout(e)
         h1 = self.linear(h1)
         h1 = self.selu(h1)
-
+        
         ri = torch.cat((e, h1), 1)
-        for res_num in range(self.num_block):
+        
+        for res_num in range(self.num_block):          
             rx = self.final_module_list[res_num](ri)
             ri = torch.cat((ri, rx), 1)
-        
-        return F.softmax(self.out(rx), dim =-1)
+        # rx = self.bn(rx)
+        return  self.out(rx)
 
-class TPSResidualEstimator(BaseEstimator, TransformerMixin):
+
+class TPSResidualEstimatorAdv(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.lr_scheduler = LRScheduler(policy = ReduceLROnPlateau, monitor = 'valid_loss', mode = 'min', patience = 3, factor = 0.1, verbose = True)
         self.early_stopping = EarlyStopping(monitor='valid_loss', patience = 10, threshold = 0.0001, threshold_mode='rel', lower_is_better=True)
  
         self.lencoder = LabelEncoder()
+
     def fit(self, X, y=None):
         # here we will apply pipeline
         cat_cols = [c for c in X.columns if 'feature' in c]
         cat_szs = [max(X[col]) + 1 for col in cat_cols]
         emb_szs = [(size, min(50, (size+1)//3)) for size in cat_szs]
 
-        self.net = NeuralNetClassifier(module=TPSResidual, module__emb_szs=emb_szs,
+        self.net = NeuralNetClassifier(module=TPSResidual,
                           device = device, lr = 0.01, max_epochs = 50, 
                           callbacks = [self.lr_scheduler, self.early_stopping], 
                           batch_size=64
