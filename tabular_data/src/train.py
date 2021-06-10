@@ -49,11 +49,10 @@ def train(df: pd.DataFrame, clf, kfold:int = 0)-> None:
     y_proba = clf.predict_proba(valid_df)
 
     # dump the whole pipeline
-    import pdb
-    pdb.set_trace
+
     print(classification_report(yValid, y_pred))
     print("Log loss ", log_loss(yValid, y_proba))
-    save_to_file(clf, f'../models/{MODEL}_{FOLD}.pkl')
+    save_to_file(clf, f'./models/{MODEL}_{FOLD}.pkl')
 
 if __name__ == '__main__':
     df_train = pd.read_csv(TRAINING_DATA)

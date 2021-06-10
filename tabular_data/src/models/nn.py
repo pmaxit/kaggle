@@ -85,7 +85,9 @@ class TPSResidualEstimator(BaseEstimator, TransformerMixin):
         self.net = NeuralNetClassifier(module=TPSResidual, module__emb_szs=emb_szs,
                           device = device, lr = 0.01, max_epochs = 50, 
                           callbacks = [self.lr_scheduler, self.early_stopping], 
-                          batch_size=64
+                          batch_size=128,
+                          optimizer__weight_decay=0.01,
+                          iterator_train__shuffle=True,
                          )
         
         # if X is a dataframe, we need to convert to numpy array
@@ -99,14 +101,15 @@ class TPSResidualEstimator(BaseEstimator, TransformerMixin):
             self.net.fit(X_train, y_train)
 
         return self
-
+    
     def predict(self, X):
         if isinstance(X, pd.DataFrame):
             X_test = X.values.astype('int64')
         else:
             raise NotImplementedError
 
-        return self.net.predict(X_test)
+        y_pred = self.net.predict(X_test)
+        return self.lencoder.inverse_transform(y_pred)
     
     def predict_proba(self, X):
         if isinstance(X, pd.DataFrame):
